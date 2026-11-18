@@ -1,0 +1,16 @@
+appsettings.Development.json
+appsettings.Local.json
+
+.nuget/
+packages/
+
+bin/
+obj/
+.vs/
+.idea/
+*.user
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
