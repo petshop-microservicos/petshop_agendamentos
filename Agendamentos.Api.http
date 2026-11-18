@@ -1,0 +1,803 @@
+# ============================================================================
+# Teste do serviço de Agendamentos
+# Pré-requisitos:
+#   1. AnimaisTutores rodando em @animaisHost (e a mesma URL em
+#      Servicos:AnimaisTutores:BaseUrl no appsettings.json, com a barra final).
+#   2. Agendamentos rodando em @host (porta do launchSettings.json).
+#   3. Banco do Agendamentos ZERADO (apague agendamentos.db): os ids abaixo
+#      assumem a ordem de criação deste arquivo. Rode de cima para baixo.
+#
+# Datas: 2026-11-22 é domingo; 2026-11-23 é segunda; 2026-11-24 é terça.
+# Horários são locais, sem fuso (2026-11-23T09:00:00).
+# ============================================================================
+
+@host = http://localhost:5124
+@animaisHost = http://localhost:5199
+
+@animalId = 1
+@animal2Id = 2
+@servicoBanhoId = 1
+@servicoTosaId = 2
+@profissionalId = 1
+@profissional2Id = 2
+
+
+################################################################
+# 0. PREPARAÇÃO NO SERVIÇO ANIMAISTUTORES
+################################################################
+
+### Criar tutor -> 201 (409 se o CPF já existir; pode ignorar)
+POST {{animaisHost}}/api/tutores
+Content-Type: application/json
+
+{
+  "nome": "Maria Souza",
+  "cpf": "12345678909",
+  "telefone": "48999990000",
+  "email": "maria@email.com"
+}
+
+### Criar animal 1 (Thor) -> 201
+POST {{animaisHost}}/api/animais
+Content-Type: application/json
+
+{
+  "nome": "Thor",
+  "especie": "Cão",
+  "raca": "Golden Retriever",
+  "dataNascimento": "2021-03-15",
+  "tutorId": 1
+}
+
+### Criar animal 2 (Mia) -> 201
+POST {{animaisHost}}/api/animais
+Content-Type: application/json
+
+{
+  "nome": "Mia",
+  "especie": "Gato",
+  "tutorId": 1
+}
+
+
+################################################################
+# 1. SERVIÇOS (RF07, RN23)
+################################################################
+
+### Criar serviço Banho (45 min) -> 201 (id 1)
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "Banho",
+  "descricao": "Banho com shampoo neutro e secagem",
+  "preco": 60.00,
+  "duracaoMinutos": 45
+}
+
+### Criar serviço Tosa (30 min) -> 201 (id 2)
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "Tosa higiênica",
+  "preco": 35.50,
+  "duracaoMinutos": 30
+}
+
+### Listar serviços -> 200
+GET {{host}}/api/servicos
+
+### Listar apenas ativos filtrando por nome -> 200
+GET {{host}}/api/servicos?ativo=true&nome=ban
+
+### Obter serviço -> 200
+GET {{host}}/api/servicos/{{servicoBanhoId}}
+
+### [ERRO] Nome duplicado, sem diferenciar maiúsculas -> 409
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "BANHO",
+  "preco": 10,
+  "duracaoMinutos": 20
+}
+
+### [ERRO RN23] Preço ausente -> 400
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "Hidratação",
+  "duracaoMinutos": 30
+}
+
+### [ERRO RN23] Preço negativo -> 400
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "Hidratação",
+  "preco": -1,
+  "duracaoMinutos": 30
+}
+
+### [ERRO RN23] Duração ausente -> 400
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "Hidratação",
+  "preco": 40
+}
+
+### [ERRO RN23] Duração zero -> 400
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "Hidratação",
+  "preco": 40,
+  "duracaoMinutos": 0
+}
+
+### Preço zero é válido (RN23: maior ou igual a zero) -> 201 (id 3)
+POST {{host}}/api/servicos
+Content-Type: application/json
+
+{
+  "nome": "Avaliação gratuita",
+  "preco": 0,
+  "duracaoMinutos": 15
+}
+
+### [ERRO] Serviço inexistente -> 404
+GET {{host}}/api/servicos/999
+
+
+################################################################
+# 2. PROFISSIONAIS (RF08)
+################################################################
+
+### Criar profissional Ana -> 201 (id 1)
+POST {{host}}/api/profissionais
+Content-Type: application/json
+
+{
+  "nome": "Ana Ribeiro",
+  "telefone": "48999991111",
+  "email": "ana@petshop.com",
+  "especialidade": "Banho e tosa"
+}
+
+### Criar profissional Bruno -> 201 (id 2)
+POST {{host}}/api/profissionais
+Content-Type: application/json
+
+{
+  "nome": "Bruno Lima",
+  "telefone": "4833334444"
+}
+
+### Listar profissionais -> 200
+GET {{host}}/api/profissionais
+
+### Obter profissional -> 200
+GET {{host}}/api/profissionais/{{profissionalId}}
+
+### Atualizar profissional -> 200
+PUT {{host}}/api/profissionais/{{profissionalId}}
+Content-Type: application/json
+
+{
+  "nome": "Ana Ribeiro Souza",
+  "telefone": "48999991111",
+  "email": "ana@petshop.com",
+  "especialidade": "Banho e tosa"
+}
+
+### [ERRO] Telefone inválido -> 400
+POST {{host}}/api/profissionais
+Content-Type: application/json
+
+{
+  "nome": "Carla Dias",
+  "telefone": "123"
+}
+
+### [ERRO] Profissional inexistente -> 404
+GET {{host}}/api/profissionais/999
+
+
+################################################################
+# 3. SERVIÇOS EXECUTADOS PELO PROFISSIONAL (RF10, RN26)
+################################################################
+
+### Ana executa apenas Banho -> 200
+PUT {{host}}/api/profissionais/{{profissionalId}}/servicos
+Content-Type: application/json
+
+{
+  "servicoIds": [1]
+}
+
+### Bruno executa Banho e Tosa -> 200
+PUT {{host}}/api/profissionais/{{profissional2Id}}/servicos
+Content-Type: application/json
+
+{
+  "servicoIds": [1, 2]
+}
+
+### Listar serviços da Ana -> 200
+GET {{host}}/api/profissionais/{{profissionalId}}/servicos
+
+### [ERRO] Serviço inexistente no vínculo -> 404
+PUT {{host}}/api/profissionais/{{profissionalId}}/servicos
+Content-Type: application/json
+
+{
+  "servicoIds": [1, 999]
+}
+
+### [ERRO] Lista ausente -> 400
+PUT {{host}}/api/profissionais/{{profissionalId}}/servicos
+Content-Type: application/json
+
+{
+}
+
+
+################################################################
+# 4. DISPONIBILIDADE SEMANAL (RF09, RN27)
+################################################################
+
+### Ana: segunda 08-12 e 12-18 (faixas encostadas), terça 08-12 -> 200
+PUT {{host}}/api/profissionais/{{profissionalId}}/disponibilidade
+Content-Type: application/json
+
+{
+  "faixas": [
+    { "diaSemana": "Segunda", "horaInicio": "08:00:00", "horaFim": "12:00:00" },
+    { "diaSemana": "Segunda", "horaInicio": "12:00:00", "horaFim": "18:00:00" },
+    { "diaSemana": "Terca",   "horaInicio": "08:00:00", "horaFim": "12:00:00" }
+  ]
+}
+
+### Bruno: segunda 08-18 -> 200
+PUT {{host}}/api/profissionais/{{profissional2Id}}/disponibilidade
+Content-Type: application/json
+
+{
+  "faixas": [
+    { "diaSemana": "Segunda", "horaInicio": "08:00:00", "horaFim": "18:00:00" }
+  ]
+}
+
+### Consultar disponibilidade da Ana -> 200
+GET {{host}}/api/profissionais/{{profissionalId}}/disponibilidade
+
+### [ERRO RN27] Hora final igual ou menor que a inicial -> 400
+PUT {{host}}/api/profissionais/{{profissionalId}}/disponibilidade
+Content-Type: application/json
+
+{
+  "faixas": [
+    { "diaSemana": "Quarta", "horaInicio": "14:00:00", "horaFim": "10:00:00" }
+  ]
+}
+
+### [ERRO RN27] Faixas do mesmo dia sobrepostas -> 400
+PUT {{host}}/api/profissionais/{{profissionalId}}/disponibilidade
+Content-Type: application/json
+
+{
+  "faixas": [
+    { "diaSemana": "Quarta", "horaInicio": "08:00:00", "horaFim": "12:00:00" },
+    { "diaSemana": "Quarta", "horaInicio": "11:00:00", "horaFim": "15:00:00" }
+  ]
+}
+
+### [ERRO] Dia da semana inválido -> 400
+PUT {{host}}/api/profissionais/{{profissionalId}}/disponibilidade
+Content-Type: application/json
+
+{
+  "faixas": [
+    { "diaSemana": "Feriado", "horaInicio": "08:00:00", "horaFim": "12:00:00" }
+  ]
+}
+
+### [ERRO] Profissional inexistente -> 404
+GET {{host}}/api/profissionais/999/disponibilidade
+
+
+################################################################
+# 5. AGENDAMENTOS: CRIAÇÃO (RN01 a RN05, RN26)
+################################################################
+
+### Segunda 09:00, Banho (45 min) com a Ana -> 201 (id 1), fim 09:45
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T09:00:00"
+}
+
+### RN03: 11:30 + 45 min cruza as faixas 08-12 e 12-18 (contíguas) -> 201 (id 2), fim 12:15
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T11:30:00"
+}
+
+### Mia com o Bruno, Tosa (30 min) às 09:00 -> 201 (id 3), fim 09:30
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animal2Id}},
+  "profissionalId": {{profissional2Id}},
+  "servicoId": {{servicoTosaId}},
+  "inicio": "2026-11-23T09:00:00"
+}
+
+### Intervalo [início, fim) permite encostar: 09:45 logo após o agendamento 1 -> 201 (id 4)
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animal2Id}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T09:45:00"
+}
+
+### [ERRO RN02] Profissional ocupado (09:30 sobrepõe o agendamento 1) -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animal2Id}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T09:30:00"
+}
+
+### [ERRO RN02] Animal ocupado (Bruno está livre às 09:30, mas o Thor sobrepõe o agendamento 1) -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissional2Id}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T09:30:00"
+}
+
+### [ERRO RN03] Antes do início da disponibilidade (07:30) -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T07:30:00"
+}
+
+### [ERRO RN03] Termina depois do fim da disponibilidade (17:45 + 45 min = 18:30) -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T17:45:00"
+}
+
+### [ERRO RN03] Domingo, sem disponibilidade -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-22T10:00:00"
+}
+
+### [ERRO RN26] Ana não executa Tosa -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoTosaId}},
+  "inicio": "2026-11-23T15:00:00"
+}
+
+### [ERRO RN04] Animal inexistente no AnimaisTutores -> 404
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": 999,
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T15:00:00"
+}
+
+### [ERRO] Serviço inexistente -> 404
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": 999,
+  "inicio": "2026-11-23T15:00:00"
+}
+
+### [ERRO] Profissional inexistente -> 404
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": 999,
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T15:00:00"
+}
+
+### [ERRO] Horário com fuso (Z) -> 400
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T15:00:00Z"
+}
+
+### [ERRO] Campos ausentes -> 400
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": 1
+}
+
+
+################################################################
+# 6. AGENDAMENTOS: CONSULTA
+################################################################
+
+### Listar todos (ordenado por início) -> 200
+GET {{host}}/api/agendamentos
+
+### Filtrar por profissional e status -> 200
+GET {{host}}/api/agendamentos?profissionalId={{profissionalId}}&status=Agendado
+
+### Filtrar por animal -> 200
+GET {{host}}/api/agendamentos?animalId={{animalId}}
+
+### Filtrar pelo dia 23/11 (de inclusivo, ate exclusivo) -> 200
+GET {{host}}/api/agendamentos?de=2026-11-23&ate=2026-11-24
+
+### Paginação -> 200
+GET {{host}}/api/agendamentos?page=1&pageSize=2
+
+### Obter agendamento (traz preço e duração copiados do serviço) -> 200
+GET {{host}}/api/agendamentos/1
+
+### [ERRO] Agendamento inexistente -> 404
+GET {{host}}/api/agendamentos/999
+
+
+################################################################
+# 7. REMARCAÇÃO (RN06)
+################################################################
+
+### Remarcar o agendamento 1 para 14:00 -> 200 (fim 14:45, duração mantida)
+PATCH {{host}}/api/agendamentos/1/remarcar
+Content-Type: application/json
+
+{
+  "inicio": "2026-11-23T14:00:00"
+}
+
+### [ERRO RN02] Remarcar o agendamento 1 para um horário ocupado (11:45 sobrepõe o 2) -> 409
+PATCH {{host}}/api/agendamentos/1/remarcar
+Content-Type: application/json
+
+{
+  "inicio": "2026-11-23T11:45:00"
+}
+
+### [ERRO RN03] Remarcar para o domingo -> 409
+PATCH {{host}}/api/agendamentos/1/remarcar
+Content-Type: application/json
+
+{
+  "inicio": "2026-11-22T10:00:00"
+}
+
+### Remarcar para o próprio horário atual é permitido (ignora o próprio agendamento) -> 200
+PATCH {{host}}/api/agendamentos/1/remarcar
+Content-Type: application/json
+
+{
+  "inicio": "2026-11-23T14:00:00"
+}
+
+### [ERRO] Remarcar agendamento inexistente -> 404
+PATCH {{host}}/api/agendamentos/999/remarcar
+Content-Type: application/json
+
+{
+  "inicio": "2026-11-23T14:00:00"
+}
+
+
+################################################################
+# 8. STATUS (RN06, RN07)
+################################################################
+
+### Cancelar o agendamento 2 (estava Agendado) -> 200
+PATCH {{host}}/api/agendamentos/2/status
+Content-Type: application/json
+
+{
+  "status": "Cancelado"
+}
+
+### [ERRO RN06] Remarcar agendamento cancelado -> 409
+PATCH {{host}}/api/agendamentos/2/remarcar
+Content-Type: application/json
+
+{
+  "inicio": "2026-11-23T10:30:00"
+}
+
+### [ERRO RN06] Cancelar de novo -> 409
+PATCH {{host}}/api/agendamentos/2/status
+Content-Type: application/json
+
+{
+  "status": "Cancelado"
+}
+
+### RN02: o horário do agendamento cancelado volta a ficar livre -> 201 (id 5)
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T11:30:00"
+}
+
+### Iniciar o atendimento do agendamento 1 -> 200 (EmAndamento)
+PATCH {{host}}/api/agendamentos/1/status
+Content-Type: application/json
+
+{
+  "status": "EmAndamento"
+}
+
+### [ERRO RN06] Remarcar agendamento em andamento -> 409
+PATCH {{host}}/api/agendamentos/1/remarcar
+Content-Type: application/json
+
+{
+  "inicio": "2026-11-23T15:00:00"
+}
+
+### [ERRO RN06] Cancelar agendamento em andamento -> 409
+PATCH {{host}}/api/agendamentos/1/status
+Content-Type: application/json
+
+{
+  "status": "Cancelado"
+}
+
+### Concluir o agendamento 1 -> 200
+PATCH {{host}}/api/agendamentos/1/status
+Content-Type: application/json
+
+{
+  "status": "Concluido"
+}
+
+### [ERRO] Status final não muda mais (Concluido -> Faltou) -> 409
+PATCH {{host}}/api/agendamentos/1/status
+Content-Type: application/json
+
+{
+  "status": "Faltou"
+}
+
+### Registrar falta do agendamento 3 -> 200
+PATCH {{host}}/api/agendamentos/3/status
+Content-Type: application/json
+
+{
+  "status": "Faltou"
+}
+
+### [ERRO] Pular etapa (Agendado -> Concluido) -> 409
+PATCH {{host}}/api/agendamentos/4/status
+Content-Type: application/json
+
+{
+  "status": "Concluido"
+}
+
+### [ERRO] Status inválido -> 400
+PATCH {{host}}/api/agendamentos/4/status
+Content-Type: application/json
+
+{
+  "status": "Inexistente"
+}
+
+### [ERRO] Status ausente -> 400
+PATCH {{host}}/api/agendamentos/4/status
+Content-Type: application/json
+
+{
+}
+
+
+################################################################
+# 9. RN05: MUDANÇAS NO SERVIÇO NÃO ALTERAM AGENDAMENTOS
+################################################################
+
+### Alterar preço e duração do serviço Banho -> 200
+PUT {{host}}/api/servicos/{{servicoBanhoId}}
+Content-Type: application/json
+
+{
+  "nome": "Banho",
+  "descricao": "Banho com shampoo neutro e secagem",
+  "preco": 80.00,
+  "duracaoMinutos": 60
+}
+
+### O agendamento 4 continua com preço 60.00 e duração 45 -> 200
+GET {{host}}/api/agendamentos/4
+
+### Um novo agendamento usa os valores novos: preço 80.00, duração 60 (13:00 a 14:00) -> 201 (id 6)
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animal2Id}},
+  "profissionalId": {{profissional2Id}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T13:00:00"
+}
+
+
+################################################################
+# 10. RN04 e RN29: INATIVAÇÃO
+################################################################
+
+### Inativar o serviço Banho -> 200
+PATCH {{host}}/api/servicos/{{servicoBanhoId}}/ativo
+Content-Type: application/json
+
+{
+  "ativo": false
+}
+
+### [ERRO RN04] Novo agendamento com serviço inativo -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T16:00:00"
+}
+
+### RN29: os agendamentos existentes não mudam -> 200
+GET {{host}}/api/agendamentos/4
+
+### Reativar o serviço Banho -> 200
+PATCH {{host}}/api/servicos/{{servicoBanhoId}}/ativo
+Content-Type: application/json
+
+{
+  "ativo": true
+}
+
+### Inativar o profissional Ana -> 200
+PATCH {{host}}/api/profissionais/{{profissionalId}}/ativo
+Content-Type: application/json
+
+{
+  "ativo": false
+}
+
+### [ERRO RN04] Novo agendamento com profissional inativo -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T16:00:00"
+}
+
+### Listar somente profissionais ativos (Ana some da lista) -> 200
+GET {{host}}/api/profissionais?ativo=true
+
+### Reativar a Ana -> 200
+PATCH {{host}}/api/profissionais/{{profissionalId}}/ativo
+Content-Type: application/json
+
+{
+  "ativo": true
+}
+
+### [ERRO] Campo ativo ausente -> 400
+PATCH {{host}}/api/profissionais/{{profissionalId}}/ativo
+Content-Type: application/json
+
+{
+}
+
+
+################################################################
+# 11. RN29: ALTERAR A DISPONIBILIDADE NÃO ALTERA AGENDAMENTOS
+################################################################
+
+### Zerar a disponibilidade da Ana -> 200
+PUT {{host}}/api/profissionais/{{profissionalId}}/disponibilidade
+Content-Type: application/json
+
+{
+  "faixas": []
+}
+
+### O agendamento 5 (segunda 11:30) continua existindo, intacto -> 200
+GET {{host}}/api/agendamentos/5
+
+### [ERRO RN03] Mas novos agendamentos da Ana são recusados -> 409
+POST {{host}}/api/agendamentos
+Content-Type: application/json
+
+{
+  "animalId": {{animalId}},
+  "profissionalId": {{profissionalId}},
+  "servicoId": {{servicoBanhoId}},
+  "inicio": "2026-11-23T16:00:00"
+}
+
+### Restaurar a disponibilidade da Ana -> 200
+PUT {{host}}/api/profissionais/{{profissionalId}}/disponibilidade
+Content-Type: application/json
+
+{
+  "faixas": [
+    { "diaSemana": "Segunda", "horaInicio": "08:00:00", "horaFim": "12:00:00" },
+    { "diaSemana": "Segunda", "horaInicio": "12:00:00", "horaFim": "18:00:00" },
+    { "diaSemana": "Terca",   "horaInicio": "08:00:00", "horaFim": "12:00:00" }
+  ]
+}

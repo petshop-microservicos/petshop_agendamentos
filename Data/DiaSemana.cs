@@ -1,0 +1,13 @@
+namespace Agendamentos.Api.Data;
+
+// Valores iguais aos de System.DayOfWeek (Domingo = 0), o que permite converter por cast.
+public enum DiaSemana
+{
+    Domingo = 0,
+    Segunda = 1,
+    Terca = 2,
+    Quarta = 3,
+    Quinta = 4,
+    Sexta = 5,
+    Sabado = 6
+}
